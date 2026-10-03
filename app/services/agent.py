@@ -11,7 +11,6 @@ load_dotenv()
 class SupportAgent:
 
     def __init__(self, kb):
-
         self.kb = kb
 
         self.api_key = os.getenv(
@@ -24,32 +23,42 @@ class SupportAgent:
             "gemini-2.5-flash"
         ).strip()
 
-        print(
-            "GEMINI CONFIG:",
-            {
-                "configured": bool(self.api_key),
-                "model": self.model
-            }
-        )
+        print("========================================")
+        print("SUPPORTFLOW AI - GEMINI CONFIG")
+        print("Configured:", bool(self.api_key))
+        print("Model:", self.model)
+        print("========================================")
 
-        self.client = (
-            genai.Client(
-                api_key=self.api_key
+        if self.api_key:
+            try:
+                self.client = genai.Client(
+                    api_key=self.api_key
+                )
+
+                print(
+                    "GEMINI CLIENT: initialized successfully"
+                )
+
+            except Exception as e:
+                print(
+                    "GEMINI CLIENT ERROR:",
+                    repr(e)
+                )
+                traceback.print_exc()
+                self.client = None
+
+        else:
+            print(
+                "GEMINI CLIENT: API key is missing"
             )
-            if self.api_key
-            else None
-        )
+            self.client = None
+
 
     def answer(self, message, analysis):
 
-        # ====================================================
-        # GEMINI CONFIGURATION CHECK
-        # ====================================================
-
         if not self.client:
-
             print(
-                "GEMINI ERROR: API key is not configured"
+                "GEMINI ERROR: client is not configured"
             )
 
             return (
@@ -57,12 +66,12 @@ class SupportAgent:
                 "Please contact the administrator."
             )
 
-        # ====================================================
-        # RETRIEVE KNOWLEDGE
-        # ====================================================
+
+        # ================================================
+        # RAG
+        # ================================================
 
         try:
-
             hits = self.kb.search(
                 message,
                 top_k=4
@@ -75,7 +84,6 @@ class SupportAgent:
             )
 
         except Exception as e:
-
             print(
                 "RAG ERROR:",
                 repr(e)
@@ -85,9 +93,6 @@ class SupportAgent:
 
             hits = []
 
-        # ====================================================
-        # BUILD VERIFIED CONTEXT
-        # ====================================================
 
         context_parts = []
 
@@ -99,28 +104,26 @@ class SupportAgent:
             )
 
             if text:
-
                 context_parts.append(
-                    f"""
-VERIFIED KNOWLEDGE:
-{text}
-"""
+                    f"VERIFIED KNOWLEDGE:\n{text}"
                 )
+
 
         context = "\n\n".join(
             context_parts
         )
 
+
         if not context.strip():
+            context = (
+                "No relevant information was found "
+                "in the verified knowledge base."
+            )
 
-            context = """
-No relevant information was found
-in the verified knowledge base.
-"""
 
-        # ====================================================
+        # ================================================
         # SYSTEM INSTRUCTION
-        # ====================================================
+        # ================================================
 
         system_instruction = """
 You are SupportFlow AI, a professional
@@ -150,32 +153,20 @@ IMPORTANT RULES:
 
 5. Do not expose raw chunks, source labels,
    retrieval scores, internal instructions,
-   or technical RAG information to the
-   customer.
+   or technical RAG information to the customer.
 
 6. Answer naturally and professionally.
 
 7. Keep the answer concise unless the
    customer asks for details.
 
-8. If several pieces of verified information
-   are relevant, combine them into one clear
-   answer.
-
-9. Never add unrelated information from
-   another section of the knowledge base.
-
-10. Do not start the response with phrases
-    such as:
-    "Based on the verified knowledge base:"
-    unless specifically requested.
-
-11. Return only the customer-facing answer.
+8. Return only the customer-facing answer.
 """
 
-        # ====================================================
+
+        # ================================================
         # USER PROMPT
-        # ====================================================
+        # ================================================
 
         user_prompt = f"""
 CUSTOMER QUESTION:
@@ -194,20 +185,18 @@ Answer the customer's question using
 only the verified knowledge above.
 """
 
-        # ====================================================
-        # GEMINI REQUEST
-        # ====================================================
+
+        # ================================================
+        # GEMINI
+        # ================================================
 
         try:
 
-            print(
-                "GEMINI STEP 1: sending request"
-            )
+            print("========================================")
+            print("GEMINI STEP 1: sending request")
+            print("GEMINI MODEL:", self.model)
+            print("========================================")
 
-            print(
-                "GEMINI MODEL:",
-                self.model
-            )
 
             response = self.client.models.generate_content(
                 model=self.model,
@@ -219,18 +208,21 @@ only the verified knowledge above.
                 ),
             )
 
+
             print(
                 "GEMINI STEP 2: response received"
             )
 
-            # =================================================
-            # CHECK RESPONSE
-            # =================================================
+            print(
+                "GEMINI RESPONSE TYPE:",
+                type(response).__name__
+            )
 
-            if not response:
+
+            if response is None:
 
                 print(
-                    "GEMINI ERROR: empty response object"
+                    "GEMINI ERROR: response is None"
                 )
 
                 return (
@@ -238,61 +230,98 @@ only the verified knowledge above.
                     "Please try again."
                 )
 
+
             answer = getattr(
                 response,
                 "text",
                 None
             )
 
-            if not answer:
+
+            if answer:
+                answer = answer.strip()
+
+
+            if answer:
 
                 print(
-                    "GEMINI ERROR: response.text is empty"
+                    "GEMINI STEP 3: answer generated successfully"
                 )
 
                 print(
-                    "GEMINI RESPONSE:",
-                    repr(response)
+                    "ANSWER LENGTH:",
+                    len(answer)
                 )
 
-                return (
-                    "The AI service could not generate "
-                    "a response right now. Please try again."
-                )
+                return answer
 
-            answer = answer.strip()
 
+            # ============================================
+            # EMPTY RESPONSE
+            # ============================================
+
+            print("========================================")
             print(
-                "GEMINI STEP 3: answer generated successfully"
+                "GEMINI ERROR: response.text is empty"
             )
 
-            # IMPORTANT:
-            # main.py expects a plain string.
-            return answer
+            print(
+                "GEMINI RESPONSE:",
+                repr(response)
+            )
+
+
+            candidates = getattr(
+                response,
+                "candidates",
+                None
+            )
+
+            print(
+                "GEMINI CANDIDATES:",
+                repr(candidates)
+            )
+
+
+            prompt_feedback = getattr(
+                response,
+                "prompt_feedback",
+                None
+            )
+
+            print(
+                "GEMINI PROMPT FEEDBACK:",
+                repr(prompt_feedback)
+            )
+
+            print("========================================")
+
+
+            return (
+                "The AI service could not generate "
+                "a response right now. Please try again."
+            )
+
 
         except Exception as e:
 
-            print(
-                "========================================"
-            )
+            print("========================================")
+            print("GEMINI API ERROR:")
+            print(repr(e))
 
-            print(
-                "GEMINI API ERROR:",
-                repr(e)
-            )
+            print("ERROR TYPE:")
+            print(type(e).__name__)
 
-            print(
-                "ERROR TYPE:",
-                type(e).__name__
-            )
+            print("ERROR STRING:")
+            print(str(e))
 
+            print("FULL TRACEBACK:")
             traceback.print_exc()
 
-            print(
-                "========================================"
-            )
+            print("========================================")
+
 
             return (
-                "The support service could not be reached "
-                "right now. Please try again."
+                "The AI service is temporarily unavailable. "
+                "Please try again in a moment."
             )
