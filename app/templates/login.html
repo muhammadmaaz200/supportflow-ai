@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}SupportFlow AI — Sign in{% endblock %}
+{% block body %}
+<div class="auth-page">
+  <div class="auth-shell">
+    <section class="auth-story">
+      <div class="brand-row"><div class="brand-mark">SF</div><div><strong>SupportFlow AI</strong><span>Customer Intelligence Platform</span></div></div>
+      <div class="story-copy">
+        <span class="eyebrow">AI SUPPORT OPERATIONS</span>
+        <h1>One workspace for customers and support teams.</h1>
+        <p>Grounded AI assistance, conversation intelligence and role-based operations in a clean local dashboard.</p>
+      </div>
+      <div class="story-grid">
+        <div><b>RAG</b><span>Knowledge-grounded answers</span></div>
+        <div><b>Gemini</b><span>LLM-powered responses</span></div>
+        <div><b>Signals</b><span>Sentiment + urgency</span></div>
+        <div><b>RBAC</b><span>Separate user/admin access</span></div>
+      </div>
+    </section>
+    <section class="auth-card">
+      <span class="eyebrow">SECURE LOGIN</span>
+      <h2>Welcome back</h2>
+      <p class="muted">Use your SupportFlow workspace credentials.</p>
+      {% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+      <form method="post" action="/login" class="form-stack">
+        <label>Email<input type="email" name="email" autocomplete="username" placeholder="you@company.com" required></label>
+        <label>Password<input type="password" name="password" autocomplete="current-password" placeholder="••••••••" required></label>
+        <button class="btn btn-primary btn-lg" type="submit">Sign in <span>→</span></button>
+      </form>
+      <div class="demo-box"><strong>Local demo accounts</strong><span>Admin: admin@supportflow.local / Admin@123</span><span>User: user@supportflow.local / User@123</span></div>
+      <p class="footnote">Demo credentials are for local portfolio testing. Change them before real deployment.</p>
+    </section>
+  </div>
+</div>
+{% endblock %}

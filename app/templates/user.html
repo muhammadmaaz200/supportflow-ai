@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}SupportFlow AI — Customer{% endblock %}
+{% block body %}
+<div class="app-shell">
+  <header class="topbar">
+    <a class="brand-row" href="/user"><div class="brand-mark">SF</div><div><strong>SupportFlow AI</strong><span>Customer workspace</span></div></a>
+    <div class="top-actions"><span class="role-pill customer">CUSTOMER</span><span class="user-email">{{ user.email }}</span><a class="link-muted" href="/logout">Sign out</a></div>
+  </header>
+  <main class="user-layout">
+    <aside class="sidebar">
+      <div class="side-title">MY WORKSPACE</div>
+      <button class="side-link active" data-view="support"><span>◉</span> AI Support</button>
+      <button class="side-link" data-view="conversations"><span>▤</span> My Conversations</button>
+      <button class="side-link" data-view="human"><span>↗</span> Human Support</button>
+      <div class="side-note"><strong>Privacy note</strong><p>Never share passwords, OTPs, PINs or full payment credentials in chat.</p></div>
+    </aside>
+    <section class="content-area">
+      <section id="view-support" class="view active">
+        <div class="page-head"><div><span class="eyebrow">CUSTOMER SUPPORT</span><h1>How can we help today?</h1><p>Ask a question. SupportFlow AI retrieves verified knowledge before answering.</p></div><div class="status-pill"><i></i> AI support online</div></div>
+        <div class="chat-layout">
+          <div class="chat-card">
+            <div class="chat-head"><div><strong>AI Support Agent</strong><span>RAG grounded · Gemini powered</span></div><span class="secure-chip">Secure session</span></div>
+            <div id="messages" class="messages"><div class="message ai"><div class="avatar">SF</div><div><small>SupportFlow AI</small><p>Hello! I can help with orders, delivery, returns, refunds, payments and account questions.</p></div></div></div>
+            <div class="suggestions"><button data-ask="What is the standard delivery time?">Delivery time</button><button data-ask="How long do I have to request a return?">Return policy</button><button data-ask="When is an eligible refund processed?">Refund timing</button></div>
+            <form id="chatForm" class="composer"><input id="message" autocomplete="off" placeholder="Describe your question…"><button class="btn btn-primary" type="submit">Send</button></form>
+          </div>
+          <div class="insight-card"><div class="card-head"><div><span class="eyebrow">LIVE SIGNALS</span><h2>Conversation intelligence</h2></div></div><div class="signal-row"><span>Sentiment</span><b id="sentimentValue">—</b></div><div class="signal-row"><span>Emotion</span><b id="emotionValue">—</b></div><div class="signal-row"><span>Urgency</span><b id="urgencyValue">—</b></div><div class="source-box"><span>Knowledge sources</span><div id="sourceList">Sources will appear after your first message.</div></div><button id="escalateLatest" class="btn btn-secondary full-width">Request human support</button></div>
+        </div>
+      </section>
+      <section id="view-conversations" class="view"><div class="page-head"><div><span class="eyebrow">HISTORY</span><h1>My conversations</h1><p>Your recent SupportFlow AI interactions.</p></div></div><div class="table-card"><div class="table-scroll"><table><thead><tr><th>Time</th><th>Message</th><th>Sentiment</th><th>Urgency</th><th></th></tr></thead><tbody id="myRows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody></table></div></div></section>
+      <section id="view-human" class="view"><div class="page-head"><div><span class="eyebrow">HUMAN SUPPORT</span><h1>Escalate to a support specialist</h1><p>Use this when an AI-only answer is not enough.</p></div></div><div class="human-card"><div class="human-icon">↗</div><h2>Need a human?</h2><p>Send the latest conversation to the support queue with a short reason. The admin console will surface it for follow-up.</p><textarea id="humanReason" placeholder="Tell the support team what you need…"></textarea><button id="humanSubmit" class="btn btn-primary">Create support request</button><div id="humanStatus" class="form-status"></div></div></section>
+    </section>
+  </main>
+</div>
+<script src="/static/user.js"></script>
+{% endblock %}

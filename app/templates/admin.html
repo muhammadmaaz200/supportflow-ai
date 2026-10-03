@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}SupportFlow AI — Admin{% endblock %}
+{% block body %}
+<div class="app-shell">
+  <header class="topbar">
+    <a class="brand-row" href="/admin"><div class="brand-mark">SF</div><div><strong>SupportFlow AI</strong><span>Admin operations</span></div></a>
+    <div class="top-actions"><span class="role-pill admin">ADMIN</span><span class="user-email">{{ user.email }}</span><a class="link-muted" href="/logout">Sign out</a></div>
+  </header>
+  <main class="admin-layout">
+    <aside class="sidebar">
+      <div class="side-title">OPERATIONS</div>
+      <button class="side-link active" data-view="overview"><span>◈</span> Overview</button>
+      <button class="side-link" data-view="knowledge"><span>▧</span> Knowledge Base</button>
+      <button class="side-link" data-view="conversations"><span>▤</span> Conversations</button>
+      <button class="side-link" data-view="analytics"><span>◒</span> Analytics</button>
+      <button class="side-link" data-view="escalations"><span>↗</span> Escalations</button>
+      <button class="side-link" data-view="audit"><span>◌</span> Audit Trail</button>
+    </aside>
+    <section class="content-area">
+      <section id="view-overview" class="view active">
+        <div class="page-head"><div><span class="eyebrow">ADMIN CONSOLE</span><h1>Support operations</h1><p>Monitor the AI agent, knowledge base and customer activity.</p></div><div class="status-pill"><i></i> System operational</div></div>
+        <div class="kpi-grid"><div class="kpi"><span>Documents</span><strong id="kpiDocuments">—</strong><small>Knowledge base</small></div><div class="kpi"><span>Chunks</span><strong id="kpiChunks">—</strong><small>Indexed content</small></div><div class="kpi"><span>Conversations</span><strong id="kpiConversations">—</strong><small>Recorded sessions</small></div><div class="kpi"><span>Urgent</span><strong id="kpiUrgent">—</strong><small>High + critical</small></div><div class="kpi"><span>Open escalations</span><strong id="kpiOpenEsc">—</strong><small>Human follow-up</small></div></div>
+        <div class="two-col"><div class="panel-card"><div class="card-head"><div><span class="eyebrow">SYSTEM</span><h2>AI capabilities</h2></div></div><div class="cap-row"><span>Gemini responses</span><b>Enabled</b></div><div class="cap-row"><span>Lexical RAG retrieval</span><b>Enabled</b></div><div class="cap-row"><span>Sentiment signals</span><b>Enabled</b></div><div class="cap-row"><span>Urgency / escalation</span><b>Enabled</b></div><div class="cap-row"><span>Role-based access</span><b>Enabled</b></div></div><div class="panel-card"><div class="card-head"><div><span class="eyebrow">SENTIMENT</span><h2>Conversation mix</h2></div></div><div class="sentiment-bars"><div><span>Positive</span><div class="bar"><i id="posBar"></i></div><b id="posCount">0</b></div><div><span>Neutral</span><div class="bar"><i id="neuBar"></i></div><b id="neuCount">0</b></div><div><span>Negative</span><div class="bar"><i id="negBar"></i></div><b id="negCount">0</b></div></div></div></div>
+        <div class="panel-card"><div class="card-head"><div><span class="eyebrow">RECENT ACTIVITY</span><h2>Latest conversations</h2></div></div><div class="table-scroll"><table><thead><tr><th>Time</th><th>Customer</th><th>Message</th><th>Sentiment</th><th>Urgency</th></tr></thead><tbody id="recentRows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody></table></div></div>
+      </section>
+      <section id="view-knowledge" class="view"><div class="page-head"><div><span class="eyebrow">KNOWLEDGE BASE</span><h1>Verified support content</h1><p>Upload PDF, TXT or Markdown files and index them for retrieval.</p></div></div><div class="upload-card"><form id="uploadForm" class="upload-row"><input id="kbFile" type="file" accept=".pdf,.txt,.md" required><button class="btn btn-primary" type="submit">Upload & index</button></form><div id="uploadStatus" class="form-status"></div></div><div class="table-card"><div class="table-scroll"><table><thead><tr><th>Document</th><th>Chunks</th></tr></thead><tbody id="knowledgeRows"><tr><td colspan="2" class="empty">Loading…</td></tr></tbody></table></div></div></section>
+      <section id="view-conversations" class="view"><div class="page-head"><div><span class="eyebrow">CONVERSATIONS</span><h1>Customer activity</h1><p>Review messages, AI answers and conversation signals.</p></div></div><div class="table-card"><div class="table-scroll"><table><thead><tr><th>Time</th><th>Customer</th><th>Message</th><th>Sentiment</th><th>Emotion</th><th>Urgency</th><th>Escalated</th></tr></thead><tbody id="conversationRows"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody></table></div></div></section>
+      <section id="view-analytics" class="view"><div class="page-head"><div><span class="eyebrow">ANALYTICS</span><h1>Conversation intelligence</h1><p>Operational signals calculated from logged customer conversations.</p></div></div><div class="analytics-grid"><div class="panel-card big-stat"><span>Negative conversations</span><strong id="analyticsNegative">0</strong><small>Recorded with negative sentiment</small></div><div class="panel-card big-stat"><span>Urgent conversations</span><strong id="analyticsUrgent">0</strong><small>High or critical urgency</small></div><div class="panel-card big-stat"><span>Escalated</span><strong id="analyticsEscalated">0</strong><small>Auto or manual human support</small></div></div></section>
+      <section id="view-escalations" class="view"><div class="page-head"><div><span class="eyebrow">HUMAN SUPPORT</span><h1>Escalation queue</h1><p>Track support requests that need human attention.</p></div></div><div class="table-card"><div class="table-scroll"><table><thead><tr><th>Time</th><th>Customer</th><th>Reason</th><th>Status</th><th>Action</th></tr></thead><tbody id="escalationRows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody></table></div></div></section>
+      <section id="view-audit" class="view"><div class="page-head"><div><span class="eyebrow">AUDIT TRAIL</span><h1>System events</h1><p>Operational events recorded for the workspace.</p></div></div><div class="table-card"><div class="table-scroll"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Details</th><th>Status</th></tr></thead><tbody id="auditRows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody></table></div></div></section>
+    </section>
+  </main>
+</div>
+<script src="/static/admin.js"></script>
+{% endblock %}
