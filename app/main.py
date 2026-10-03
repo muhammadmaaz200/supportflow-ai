@@ -1,5 +1,6 @@
 import os
 import shutil
+import traceback
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Form, HTTPException, UploadFile, File
@@ -49,7 +50,9 @@ app.add_middleware(
 
 app.mount(
     "/static",
-    StaticFiles(directory=str(Path(__file__).parent / "static")),
+    StaticFiles(
+        directory=str(Path(__file__).parent / "static")
+    ),
     name="static",
 )
 
@@ -243,6 +246,7 @@ def login(
             )
 
             try:
+
                 audit(
                     email,
                     "login_failed",
@@ -285,7 +289,6 @@ def login(
             "LOGIN STEP 7: session saved"
         )
 
-        # Audit should NOT prevent login from working.
         try:
 
             audit(
@@ -331,8 +334,6 @@ def login(
 
     except Exception as e:
 
-        import traceback
-
         print(
             "LOGIN ERROR:",
             repr(e)
@@ -361,9 +362,10 @@ def logout(request: Request):
 
     try:
 
-        print("LOGOUT STEP 1: request received")
+        print(
+            "LOGOUT STEP 1: request received"
+        )
 
-        # Get current session user
         user = current_user(request)
 
         print(
@@ -371,14 +373,8 @@ def logout(request: Request):
             user
         )
 
-        # ----------------------------------------------------
-        # CLEAR SESSION FIRST
-        # ----------------------------------------------------
-        #
-        # This is important for Vercel.
-        # Even if SQLite/audit has a problem,
-        # logout should still happen.
-        # ----------------------------------------------------
+        # Clear session FIRST.
+        # Database/audit failure must not block logout.
 
         request.session.clear()
 
@@ -386,13 +382,7 @@ def logout(request: Request):
             "LOGOUT STEP 3: session cleared"
         )
 
-        # ----------------------------------------------------
-        # AUDIT LOG
-        # ----------------------------------------------------
-        #
-        # Audit failure must NOT prevent logout.
-        # ----------------------------------------------------
-
+        # Audit is optional.
         if user:
 
             try:
@@ -414,10 +404,6 @@ def logout(request: Request):
                     repr(audit_error)
                 )
 
-        # ----------------------------------------------------
-        # REDIRECT
-        # ----------------------------------------------------
-
         print(
             "LOGOUT STEP 5: redirecting to login"
         )
@@ -429,8 +415,6 @@ def logout(request: Request):
 
     except Exception as e:
 
-        import traceback
-
         print(
             "LOGOUT ERROR:",
             repr(e)
@@ -438,7 +422,6 @@ def logout(request: Request):
 
         traceback.print_exc()
 
-        # Try one more time to clear session.
         try:
             request.session.clear()
         except Exception:
@@ -563,82 +546,252 @@ def chat(
     payload: ChatRequest
 ):
 
-    user = require_user(request)
-
-    analysis = analyze(
-        payload.message
-    )
-
-    answer = agent.answer(
-        payload.message,
-        analysis
-    )
-
-    hits = kb.search(
-        payload.message,
-        top_k=4
-    )
-
-    sources = [
-        {
-            "filename": h["filename"],
-            "score": h["score"]
-        }
-        for h in hits
-    ]
-
-    conversation_id = save_conversation(
-        user,
-        payload.message,
-        answer,
-        analysis,
-        sources
-    )
-
     try:
 
-        audit(
-            user["email"],
-            "chat",
-            f"Conversation {conversation_id}"
+        print(
+            "CHAT STEP 1: request received"
         )
 
-    except Exception as audit_error:
+        # ----------------------------------------------------
+        # AUTHENTICATION
+        # ----------------------------------------------------
+
+        user = require_user(request)
 
         print(
-            "CHAT AUDIT ERROR:",
-            repr(audit_error)
+            "CHAT STEP 2: authenticated user =",
+            user.get("email")
         )
 
-    if analysis["escalated"]:
+        # ----------------------------------------------------
+        # SENTIMENT ANALYSIS
+        # ----------------------------------------------------
 
-        create_escalation(
-            conversation_id,
-            user,
-            "AI detected elevated urgency"
+        print(
+            "CHAT STEP 3: running sentiment analysis"
         )
+
+        analysis = analyze(
+            payload.message
+        )
+
+        print(
+            "CHAT STEP 4: analysis completed =",
+            analysis
+        )
+
+        # ----------------------------------------------------
+        # GEMINI / AI AGENT
+        # ----------------------------------------------------
+
+        print(
+            "CHAT STEP 5: calling SupportAgent"
+        )
+
+        answer = agent.answer(
+            payload.message,
+            analysis
+        )
+
+        print(
+            "CHAT STEP 6: agent response received"
+        )
+
+        # ----------------------------------------------------
+        # KNOWLEDGE BASE SEARCH
+        # ----------------------------------------------------
+
+        print(
+            "CHAT STEP 7: searching knowledge base"
+        )
+
+        hits = kb.search(
+            payload.message,
+            top_k=4
+        )
+
+        print(
+            "CHAT STEP 8: knowledge search completed, hits =",
+            len(hits)
+        )
+
+        sources = [
+            {
+                "filename": h["filename"],
+                "score": h["score"]
+            }
+            for h in hits
+        ]
+
+        # ----------------------------------------------------
+        # SAVE CONVERSATION
+        # ----------------------------------------------------
+
+        print(
+            "CHAT STEP 9: saving conversation"
+        )
+
+        try:
+
+            conversation_id = save_conversation(
+                user,
+                payload.message,
+                answer,
+                analysis,
+                sources
+            )
+
+            print(
+                "CHAT STEP 10: conversation saved, id =",
+                conversation_id
+            )
+
+        except Exception as db_error:
+
+            print(
+                "========================================"
+            )
+
+            print(
+                "CHAT DATABASE ERROR:",
+                repr(db_error)
+            )
+
+            print(
+                "DATABASE ERROR TYPE:",
+                type(db_error).__name__
+            )
+
+            traceback.print_exc()
+
+            print(
+                "========================================"
+            )
+
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": "Database error",
+                    "message": str(db_error),
+                    "type": type(db_error).__name__
+                }
+            )
+
+        # ----------------------------------------------------
+        # AUDIT
+        # ----------------------------------------------------
 
         try:
 
             audit(
                 user["email"],
-                "auto_escalation",
+                "chat",
                 f"Conversation {conversation_id}"
+            )
+
+            print(
+                "CHAT STEP 11: audit saved"
             )
 
         except Exception as audit_error:
 
             print(
-                "ESCALATION AUDIT ERROR:",
+                "CHAT AUDIT ERROR:",
                 repr(audit_error)
             )
 
-    return {
-        "id": conversation_id,
-        "answer": answer,
-        "analysis": analysis,
-        "sources": sources,
-    }
+        # ----------------------------------------------------
+        # AUTO ESCALATION
+        # ----------------------------------------------------
+
+        if analysis.get("escalated"):
+
+            print(
+                "CHAT STEP 12: creating escalation"
+            )
+
+            try:
+
+                create_escalation(
+                    conversation_id,
+                    user,
+                    "AI detected elevated urgency"
+                )
+
+                print(
+                    "CHAT STEP 13: escalation created"
+                )
+
+            except Exception as escalation_error:
+
+                print(
+                    "ESCALATION ERROR:",
+                    repr(escalation_error)
+                )
+
+            try:
+
+                audit(
+                    user["email"],
+                    "auto_escalation",
+                    f"Conversation {conversation_id}"
+                )
+
+            except Exception as audit_error:
+
+                print(
+                    "ESCALATION AUDIT ERROR:",
+                    repr(audit_error)
+                )
+
+        # ----------------------------------------------------
+        # SUCCESS RESPONSE
+        # ----------------------------------------------------
+
+        print(
+            "CHAT STEP 14: returning successful response"
+        )
+
+        return {
+            "id": conversation_id,
+            "answer": answer,
+            "analysis": analysis,
+            "sources": sources,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+
+        print(
+            "========================================"
+        )
+
+        print(
+            "CHAT ERROR:",
+            repr(e)
+        )
+
+        print(
+            "CHAT ERROR TYPE:",
+            type(e).__name__
+        )
+
+        traceback.print_exc()
+
+        print(
+            "========================================"
+        )
+
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "Chat service error",
+                "message": str(e),
+                "type": type(e).__name__
+            }
+        )
 
 
 # ============================================================
@@ -699,6 +852,7 @@ def manual_escalate(
     ]
 
     if not rows:
+
         raise HTTPException(
             404,
             "Conversation not found"
