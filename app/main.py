@@ -38,6 +38,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
+
 app.add_middleware(
     SessionMiddleware,
     secret_key=SESSION_SECRET,
@@ -45,11 +46,13 @@ app.add_middleware(
     https_only=False,
 )
 
+
 app.mount(
     "/static",
     StaticFiles(directory=str(Path(__file__).parent / "static")),
     name="static",
 )
+
 
 templates = Jinja2Templates(
     directory=str(Path(__file__).parent / "templates")
@@ -65,6 +68,7 @@ init_auth_db()
 
 kb = KnowledgeBase(KB_DIR)
 
+
 for filename in sorted(
     {item["filename"] for item in kb.chunks}
 ):
@@ -77,7 +81,9 @@ for filename in sorted(
         )
     )
 
+
 agent = SupportAgent(kb)
+
 
 ALLOWED_EXTENSIONS = {
     ".pdf",
@@ -236,16 +242,24 @@ def login(
                 "LOGIN STEP 4: invalid credentials"
             )
 
-            audit(
-                email,
-                "login_failed",
-                "Invalid credentials",
-                "failed"
-            )
+            try:
+                audit(
+                    email,
+                    "login_failed",
+                    "Invalid credentials",
+                    "failed"
+                )
 
-            print(
-                "LOGIN STEP 5: failed-login audit saved"
-            )
+                print(
+                    "LOGIN STEP 5: failed-login audit saved"
+                )
+
+            except Exception as audit_error:
+
+                print(
+                    "LOGIN AUDIT ERROR:",
+                    repr(audit_error)
+                )
 
             return templates.TemplateResponse(
                 request=request,
@@ -271,15 +285,25 @@ def login(
             "LOGIN STEP 7: session saved"
         )
 
-        audit(
-            user["email"],
-            "login",
-            "Successful sign-in"
-        )
+        # Audit should NOT prevent login from working.
+        try:
 
-        print(
-            "LOGIN STEP 8: successful-login audit saved"
-        )
+            audit(
+                user["email"],
+                "login",
+                "Successful sign-in"
+            )
+
+            print(
+                "LOGIN STEP 8: successful-login audit saved"
+            )
+
+        except Exception as audit_error:
+
+            print(
+                "LOGIN AUDIT ERROR:",
+                repr(audit_error)
+            )
 
         # ----------------------------------------------------
         # REDIRECT
@@ -329,24 +353,135 @@ def login(
 # LOGOUT
 # ============================================================
 
-@app.get("/logout")
+@app.get(
+    "/logout",
+    response_class=HTMLResponse
+)
 def logout(request: Request):
 
-    user = current_user(request)
+    try:
 
-    if user:
-        audit(
-            user["email"],
-            "logout",
-            "Session ended"
+        print("LOGOUT STEP 1: request received")
+
+        # Get current session user
+        user = current_user(request)
+
+        print(
+            "LOGOUT STEP 2: session user =",
+            user
         )
 
-    request.session.clear()
+        # ----------------------------------------------------
+        # CLEAR SESSION FIRST
+        # ----------------------------------------------------
+        #
+        # This is important for Vercel.
+        # Even if SQLite/audit has a problem,
+        # logout should still happen.
+        # ----------------------------------------------------
 
-    return RedirectResponse(
-        "/login",
-        status_code=303
-    )
+        request.session.clear()
+
+        print(
+            "LOGOUT STEP 3: session cleared"
+        )
+
+        # ----------------------------------------------------
+        # AUDIT LOG
+        # ----------------------------------------------------
+        #
+        # Audit failure must NOT prevent logout.
+        # ----------------------------------------------------
+
+        if user:
+
+            try:
+
+                audit(
+                    user.get("email", ""),
+                    "logout",
+                    "Session ended"
+                )
+
+                print(
+                    "LOGOUT STEP 4: audit saved"
+                )
+
+            except Exception as audit_error:
+
+                print(
+                    "LOGOUT AUDIT ERROR:",
+                    repr(audit_error)
+                )
+
+        # ----------------------------------------------------
+        # REDIRECT
+        # ----------------------------------------------------
+
+        print(
+            "LOGOUT STEP 5: redirecting to login"
+        )
+
+        return RedirectResponse(
+            "/login",
+            status_code=303
+        )
+
+    except Exception as e:
+
+        import traceback
+
+        print(
+            "LOGOUT ERROR:",
+            repr(e)
+        )
+
+        traceback.print_exc()
+
+        # Try one more time to clear session.
+        try:
+            request.session.clear()
+        except Exception:
+            pass
+
+        return HTMLResponse(
+            content=f"""
+            <html>
+                <head>
+                    <title>Logout Error</title>
+                </head>
+
+                <body style="
+                    font-family: Arial, sans-serif;
+                    padding: 40px;
+                    background: #f5f5f5;
+                ">
+
+                    <h1>Logout Error</h1>
+
+                    <p>
+                        <strong>Error Type:</strong>
+                    </p>
+
+                    <pre>{type(e).__name__}</pre>
+
+                    <p>
+                        <strong>Error Message:</strong>
+                    </p>
+
+                    <pre>{str(e)}</pre>
+
+                    <br>
+
+                    <a href="/login">
+                        Go to Login
+                    </a>
+
+                </body>
+            </html>
+            """,
+            status_code=500
+        )
 
 
 # ============================================================
@@ -460,11 +595,20 @@ def chat(
         sources
     )
 
-    audit(
-        user["email"],
-        "chat",
-        f"Conversation {conversation_id}"
-    )
+    try:
+
+        audit(
+            user["email"],
+            "chat",
+            f"Conversation {conversation_id}"
+        )
+
+    except Exception as audit_error:
+
+        print(
+            "CHAT AUDIT ERROR:",
+            repr(audit_error)
+        )
 
     if analysis["escalated"]:
 
@@ -474,11 +618,20 @@ def chat(
             "AI detected elevated urgency"
         )
 
-        audit(
-            user["email"],
-            "auto_escalation",
-            f"Conversation {conversation_id}"
-        )
+        try:
+
+            audit(
+                user["email"],
+                "auto_escalation",
+                f"Conversation {conversation_id}"
+            )
+
+        except Exception as audit_error:
+
+            print(
+                "ESCALATION AUDIT ERROR:",
+                repr(audit_error)
+            )
 
     return {
         "id": conversation_id,
@@ -557,11 +710,20 @@ def manual_escalate(
         payload.reason
     )
 
-    audit(
-        user["email"],
-        "manual_escalation",
-        f"Escalation {escalation_id}"
-    )
+    try:
+
+        audit(
+            user["email"],
+            "manual_escalation",
+            f"Escalation {escalation_id}"
+        )
+
+    except Exception as audit_error:
+
+        print(
+            "MANUAL ESCALATION AUDIT ERROR:",
+            repr(audit_error)
+        )
 
     return {
         "status": "open",
@@ -655,11 +817,20 @@ def api_update_escalation(
         status
     )
 
-    audit(
-        user["email"],
-        "escalation_update",
-        f"Escalation {escalation_id} → {status}"
-    )
+    try:
+
+        audit(
+            user["email"],
+            "escalation_update",
+            f"Escalation {escalation_id} → {status}"
+        )
+
+    except Exception as audit_error:
+
+        print(
+            "ESCALATION UPDATE AUDIT ERROR:",
+            repr(audit_error)
+        )
 
     return {
         "ok": True
@@ -744,11 +915,20 @@ async def knowledge_upload(
         chunk_count
     )
 
-    audit(
-        user["email"],
-        "knowledge_upload",
-        f"{safe_name} ({chunk_count} chunks)"
-    )
+    try:
+
+        audit(
+            user["email"],
+            "knowledge_upload",
+            f"{safe_name} ({chunk_count} chunks)"
+        )
+
+    except Exception as audit_error:
+
+        print(
+            "KNOWLEDGE UPLOAD AUDIT ERROR:",
+            repr(audit_error)
+        )
 
     return {
         "ok": True,
