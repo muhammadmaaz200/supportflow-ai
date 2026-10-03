@@ -2,7 +2,6 @@ const $ = (id) => document.getElementById(id);
 
 let latestConversationId = null;
 
-
 function esc(value) {
   return String(value ?? '').replace(
     /[&<>"']/g,
@@ -16,102 +15,105 @@ function esc(value) {
   );
 }
 
-
 function addMessage(text, who) {
+  const messages = $('messages');
+
+  if (!messages) {
+    console.error('messages element not found');
+    return;
+  }
 
   const wrap = document.createElement('div');
-
   wrap.className = `message ${who}`;
 
-  wrap.innerHTML = who === 'user'
-    ? `
+  if (who === 'user') {
+    wrap.innerHTML = `
       <div>
         <small>You</small>
         <p>${esc(text)}</p>
       </div>
-    `
-    : `
+    `;
+  } else {
+    wrap.innerHTML = `
       <div class="avatar">SF</div>
       <div>
         <small>SupportFlow AI</small>
         <p>${esc(text)}</p>
       </div>
     `;
+  }
 
-  $('messages').appendChild(wrap);
-
-  $('messages').scrollTop =
-    $('messages').scrollHeight;
+  messages.appendChild(wrap);
+  messages.scrollTop = messages.scrollHeight;
 }
-
 
 function setSignals(data) {
+  const analysis = data?.analysis || {};
 
-  const a = data.analysis || {};
+  const sentiment = $('sentimentValue');
+  const emotion = $('emotionValue');
+  const urgency = $('urgencyValue');
+  const sourceList = $('sourceList');
 
-  $('sentimentValue').textContent =
-    a.sentiment || '—';
+  if (sentiment) {
+    sentiment.textContent = analysis.sentiment || '—';
+  }
 
-  $('emotionValue').textContent =
-    a.emotion || '—';
+  if (emotion) {
+    emotion.textContent = analysis.emotion || '—';
+  }
 
-  $('urgencyValue').textContent =
-    a.urgency || '—';
+  if (urgency) {
+    urgency.textContent = analysis.urgency || '—';
+  }
 
+  const sources = Array.isArray(data?.sources) ? data.sources : [];
 
-  const sources =
-    data.sources || [];
+  if (sourceList) {
+    if (sources.length) {
+      sourceList.innerHTML = sources.map(source => {
+        const filename = esc(source?.filename || 'Unknown source');
+        const score = Number(source?.score);
 
+        return `
+          <div>
+            ${filename}
+            ·
+            ${Number.isFinite(score) ? (score * 100).toFixed(0) : '—'}%
+          </div>
+        `;
+      }).join('');
+    } else {
+      sourceList.textContent =
+        'No verified knowledge source matched this question.';
+    }
+  }
 
-  $('sourceList').innerHTML =
-    sources.length
-      ? sources.map(s =>
-          `<div>
-            ${esc(s.filename)}
-            · ${(Number(s.score) * 100).toFixed(0)}%
-          </div>`
-        ).join('')
-      : 'No verified knowledge source matched this question.';
-
-
-  latestConversationId =
-    data.id || null;
+  latestConversationId = data?.id || null;
 }
 
-
-/* ============================================================
-   SEND CHAT MESSAGE
-   ============================================================ */
-
 async function sendMessage(prefill = '') {
-
   const input = $('message');
 
-  const value =
-    (prefill || input.value).trim();
+  if (!input) {
+    console.error('message input not found');
+    return;
+  }
 
+  const value = (prefill || input.value || '').trim();
 
   if (!value) {
     return;
   }
 
-
-  addMessage(
-    value,
-    'user'
-  );
-
+  addMessage(value, 'user');
 
   input.value = '';
 
+  const messages = $('messages');
 
-  const pending =
-    document.createElement('div');
-
-
-  pending.className =
-    'message ai';
-
+  const pending = document.createElement('div');
+  pending.className = 'message ai';
 
   pending.innerHTML = `
     <div class="avatar">SF</div>
@@ -121,490 +123,339 @@ async function sendMessage(prefill = '') {
     </div>
   `;
 
-
-  $('messages').appendChild(
-    pending
-  );
-
-
-  $('messages').scrollTop =
-    $('messages').scrollHeight;
-
+  if (messages) {
+    messages.appendChild(pending);
+    messages.scrollTop = messages.scrollHeight;
+  }
 
   try {
+    console.log('CHAT: sending request');
 
-    console.log(
-      'CHAT: sending request'
-    );
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        message: value
+      })
+    });
 
+    console.log('CHAT: response status =', res.status);
+    console.log('CHAT: content-type =', res.headers.get('content-type'));
 
-    const res = await fetch(
-      '/api/chat',
-      {
-        method: 'POST',
+    const raw = await res.text();
 
-        headers: {
-          'Content-Type':
-            'application/json'
-        },
+    console.log('CHAT: raw response =', raw);
 
-        body: JSON.stringify({
-          message: value
-        })
-      }
-    );
-
-
-    console.log(
-      'CHAT: response status =',
-      res.status
-    );
-
-
-    /* --------------------------------------------------------
-       Read response safely
-    -------------------------------------------------------- */
-
-    const rawText =
-      await res.text();
-
-
-    console.log(
-      'CHAT: raw response =',
-      rawText
-    );
-
-
-    let data = {};
-
+    let data = null;
 
     try {
-
-      data =
-        rawText
-          ? JSON.parse(rawText)
-          : {};
-
-    } catch (jsonError) {
-
-      console.error(
-        'CHAT JSON ERROR:',
-        jsonError
-      );
+      data = JSON.parse(raw);
+    } catch (parseError) {
+      console.error('CHAT: JSON parse failed =', parseError);
 
       throw new Error(
-        `Server returned invalid JSON. HTTP ${res.status}`
+        `Server returned non-JSON response. HTTP ${res.status}. Response: ${raw.slice(0, 300)}`
       );
     }
 
-
-    console.log(
-      'CHAT: parsed response =',
-      data
-    );
-
-
-    /* --------------------------------------------------------
-       Backend error
-    -------------------------------------------------------- */
+    console.log('CHAT: parsed response =', data);
 
     if (!res.ok) {
-
-      const backendMessage =
-        data.message ||
-        data.detail ||
-        data.error ||
-        `HTTP ${res.status}`;
-
-      console.error(
-        'CHAT BACKEND ERROR:',
-        backendMessage
-      );
-
       throw new Error(
-        backendMessage
+        data?.message ||
+        data?.detail ||
+        data?.error ||
+        `Request failed with HTTP ${res.status}`
       );
     }
 
+    if (!data || typeof data !== 'object') {
+      throw new Error('Invalid response received from server.');
+    }
 
-    /* --------------------------------------------------------
-       Validate successful response
-    -------------------------------------------------------- */
-
-    if (
-      !data ||
-      typeof data !== 'object'
-    ) {
+    if (!data.answer) {
+      console.error('CHAT: answer missing:', data);
 
       throw new Error(
-        'Invalid response from chat service.'
+        data?.message ||
+        data?.detail ||
+        'Server response does not contain an answer.'
       );
     }
 
+    if (pending && pending.parentNode) {
+      pending.remove();
+    }
 
-    console.log(
-      'CHAT: answer =',
-      data.answer
-    );
-
-
-    pending.remove();
-
-
-    addMessage(
-      data.answer ||
-      'I could not generate a response.',
-      'ai'
-    );
-
+    addMessage(data.answer, 'ai');
 
     setSignals(data);
 
+    console.log('CHAT: success');
 
-    /*
-     * Refresh conversation history
-     */
     loadConversations();
 
-
   } catch (error) {
+    console.error('CHAT ERROR:', error);
 
-    console.error(
-      'CHAT ERROR:',
-      error
-    );
-
-
-    pending.remove();
-
-
-    /*
-     * IMPORTANT:
-     * Show the actual backend error temporarily
-     * so we can identify the problem.
-     */
+    if (pending && pending.parentNode) {
+      pending.remove();
+    }
 
     addMessage(
-      `Support service error: ${
-        error.message ||
-        'Unknown error'
-      }`,
+      `Support service error: ${error?.message || 'Unknown error'}`,
       'ai'
     );
   }
 }
 
-
-/* ============================================================
-   LOAD CONVERSATIONS
-   ============================================================ */
-
 async function loadConversations() {
+  const rowsElement = $('myRows');
+
+  if (!rowsElement) {
+    return;
+  }
 
   try {
+    const res = await fetch('/api/my/conversations', {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      },
+      credentials: 'same-origin'
+    });
 
-    const res =
-      await fetch(
-        '/api/my/conversations'
-      );
+    const raw = await res.text();
 
+    console.log('CONVERSATIONS response:', raw);
+
+    let data;
+
+    try {
+      data = JSON.parse(raw);
+    } catch (_) {
+      throw new Error('Invalid conversations response.');
+    }
 
     if (!res.ok) {
-
       throw new Error(
-        `HTTP ${res.status}`
+        data?.message ||
+        data?.detail ||
+        data?.error ||
+        'Failed to load conversations.'
       );
     }
 
+    const rows = Array.isArray(data?.conversations)
+      ? data.conversations
+      : [];
 
-    const data =
-      await res.json();
+    if (!rows.length) {
+      rowsElement.innerHTML = `
+        <tr>
+          <td colspan="5" class="empty">
+            No conversations yet.
+          </td>
+        </tr>
+      `;
+      return;
+    }
 
+    rowsElement.innerHTML = rows.map(r => `
+      <tr>
+        <td>${esc(r?.created_at || '')}</td>
 
-    const rows =
-      data.conversations || [];
+        <td>
+          ${esc(r?.message || '')}
+        </td>
 
+        <td>
+          <span class="tag tag-${esc(r?.sentiment || '')}">
+            ${esc(r?.sentiment || '—')}
+          </span>
+        </td>
 
-    $('myRows').innerHTML =
-      rows.length
-        ? rows.map(r => `
-          <tr>
-            <td>${esc(r.created_at)}</td>
+        <td>
+          <span class="tag tag-${esc(r?.urgency || '')}">
+            ${esc(r?.urgency || '—')}
+          </span>
+        </td>
 
-            <td>
-              ${esc(r.message)}
-            </td>
-
-            <td>
-              <span class="tag tag-${esc(r.sentiment)}">
-                ${esc(r.sentiment)}
-              </span>
-            </td>
-
-            <td>
-              <span class="tag tag-${esc(r.urgency)}">
-                ${esc(r.urgency)}
-              </span>
-            </td>
-
-            <td>
-              <button
-                class="btn btn-secondary"
-                onclick="setLatest(${r.id})"
-              >
-                Open
-              </button>
-            </td>
-          </tr>
-        `).join('')
-        : `
-          <tr>
-            <td
-              colspan="5"
-              class="empty"
-            >
-              No conversations yet.
-            </td>
-          </tr>
-        `;
-
+        <td>
+          <button
+            class="btn btn-secondary"
+            onclick="setLatest(${Number(r?.id) || 0})"
+          >
+            Open
+          </button>
+        </td>
+      </tr>
+    `).join('');
 
   } catch (error) {
+    console.error('CONVERSATIONS ERROR:', error);
 
-    console.error(
-      'LOAD CONVERSATIONS ERROR:',
-      error
-    );
-
+    rowsElement.innerHTML = `
+      <tr>
+        <td colspan="5" class="empty">
+          Could not load conversations.
+        </td>
+      </tr>
+    `;
   }
 }
 
-
-/* ============================================================
-   SET LATEST CONVERSATION
-   ============================================================ */
-
 function setLatest(id) {
-
-  latestConversationId =
-    id;
-
-  switchView(
-    'human'
-  );
+  latestConversationId = id;
+  switchView('human');
 }
 
-
-/* ============================================================
-   REQUEST HUMAN SUPPORT
-   ============================================================ */
-
 async function requestHuman() {
+  const status = $('humanStatus');
 
   if (!latestConversationId) {
+    switchView('human');
 
-    switchView(
-      'human'
-    );
-
-    $('humanStatus').textContent =
-      'Start a chat first or choose a conversation from My Conversations.';
+    if (status) {
+      status.textContent =
+        'Start a chat first or choose a conversation from My Conversations.';
+    }
 
     return;
   }
 
+  const reasonInput = $('humanReason');
 
   const reason =
-    $('humanReason').value.trim()
-    ||
+    reasonInput?.value.trim() ||
     'Customer requested human support';
 
-
-  $('humanStatus').textContent =
-    'Sending support request…';
-
+  if (status) {
+    status.textContent = 'Sending support request…';
+  }
 
   try {
+    const res = await fetch(
+      `/api/my/conversations/${latestConversationId}/escalate`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          reason
+        })
+      }
+    );
 
-    const res =
-      await fetch(
-        `/api/my/conversations/${latestConversationId}/escalate`,
-        {
-          method: 'POST',
+    const raw = await res.text();
 
-          headers: {
-            'Content-Type':
-              'application/json'
-          },
+    console.log('ESCALATION response:', raw);
 
-          body: JSON.stringify({
-            reason
-          })
-        }
+    let data;
+
+    try {
+      data = JSON.parse(raw);
+    } catch (_) {
+      throw new Error('Invalid escalation response.');
+    }
+
+    if (!res.ok) {
+      throw new Error(
+        data?.message ||
+        data?.detail ||
+        data?.error ||
+        `Request failed with HTTP ${res.status}`
       );
+    }
 
-
-    const data =
-      await res.json();
-
-
-    $('humanStatus').textContent =
-      res.ok
-        ? `Support request #${data.escalation_id} is now open.`
-        : (
-            data.detail ||
-            data.message ||
-            'Request failed.'
-          );
-
+    if (status) {
+      status.textContent =
+        `Support request #${data.escalation_id} is now open.`;
+    }
 
   } catch (error) {
+    console.error('ESCALATION ERROR:', error);
 
-    console.error(
-      'HUMAN SUPPORT ERROR:',
-      error
-    );
-
-
-    $('humanStatus').textContent =
-      `Error: ${
-        error.message ||
-        'Request failed.'
-      }`;
+    if (status) {
+      status.textContent =
+        `Support request error: ${error?.message || 'Unknown error'}`;
+    }
   }
 }
-
-
-/* ============================================================
-   SWITCH VIEW
-   ============================================================ */
 
 function switchView(name) {
-
-  document
-    .querySelectorAll('.side-link')
-    .forEach(
-      b =>
-        b.classList.toggle(
-          'active',
-          b.dataset.view === name
-        )
+  document.querySelectorAll('.side-link').forEach(button => {
+    button.classList.toggle(
+      'active',
+      button.dataset.view === name
     );
+  });
 
-
-  document
-    .querySelectorAll('.view')
-    .forEach(
-      v =>
-        v.classList.toggle(
-          'active',
-          v.id === `view-${name}`
-        )
+  document.querySelectorAll('.view').forEach(view => {
+    view.classList.toggle(
+      'active',
+      view.id === `view-${name}`
     );
+  });
 
-
-  if (
-    name === 'conversations'
-  ) {
-
+  if (name === 'conversations') {
     loadConversations();
-
   }
 }
 
+function initializeUserPage() {
 
-/* ============================================================
-   SIDEBAR
-   ============================================================ */
+  document.querySelectorAll('.side-link').forEach(button => {
+    button.addEventListener('click', () => {
+      switchView(button.dataset.view);
+    });
+  });
 
-document
-  .querySelectorAll('.side-link')
-  .forEach(
-    b =>
-      b.addEventListener(
-        'click',
-        () =>
-          switchView(
-            b.dataset.view
-          )
-      )
-  );
+  document.querySelectorAll('[data-ask]').forEach(button => {
+    button.addEventListener('click', () => {
+      switchView('support');
+      sendMessage(button.dataset.ask);
+    });
+  });
 
+  const chatForm = $('chatForm');
 
-/* ============================================================
-   QUICK QUESTIONS
-   ============================================================ */
-
-document
-  .querySelectorAll('[data-ask]')
-  .forEach(
-    b =>
-      b.addEventListener(
-        'click',
-        () => {
-
-          switchView(
-            'support'
-          );
-
-          sendMessage(
-            b.dataset.ask
-          );
-
-        }
-      )
-  );
-
-
-/* ============================================================
-   CHAT FORM
-   ============================================================ */
-
-$('chatForm')
-  .addEventListener(
-    'submit',
-    e => {
-
-      e.preventDefault();
-
+  if (chatForm) {
+    chatForm.addEventListener('submit', event => {
+      event.preventDefault();
       sendMessage();
+    });
+  }
 
-    }
-  );
+  const escalateLatest = $('escalateLatest');
 
-
-/* ============================================================
-   ESCALATE LATEST
-   ============================================================ */
-
-$('escalateLatest')
-  .addEventListener(
-    'click',
-    () => {
-
-      switchView(
-        'human'
-      );
-
+  if (escalateLatest) {
+    escalateLatest.addEventListener('click', () => {
+      switchView('human');
       requestHuman();
+    });
+  }
 
-    }
-  );
+  const humanSubmit = $('humanSubmit');
 
+  if (humanSubmit) {
+    humanSubmit.addEventListener('click', requestHuman);
+  }
 
-/* ============================================================
-   HUMAN SUPPORT
-   ============================================================ */
+  loadConversations();
 
-$('humanSubmit')
-  .addEventListener(
-    'click',
-    requestHuman
-  );
+  console.log('SupportFlow user.js loaded successfully');
+}
 
-
-/* ============================================================
-   INITIAL LOAD
-   ============================================================ */
-
-loadConversations();
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializeUserPage);
+} else {
+  initializeUserPage();
+}
