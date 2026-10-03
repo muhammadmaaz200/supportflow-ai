@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import json
 from pathlib import Path
@@ -9,10 +10,17 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+# Vercel filesystem is read-only except /tmp
+IS_VERCEL = os.getenv("VERCEL") == "1"
 
-DB_PATH = DATA_DIR / "supportflow.db"
+if IS_VERCEL:
+    RUNTIME_DIR = Path("/tmp/supportflow")
+else:
+    RUNTIME_DIR = BASE_DIR / "data"
+
+RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+
+DB_PATH = RUNTIME_DIR / "supportflow.db"
 
 
 # ============================================================
@@ -64,7 +72,6 @@ def add_analysis_fields(item):
     the fields available to the dashboard/frontend.
     """
 
-    # Default values
     item["sentiment"] = "neutral"
     item["emotion"] = "neutral"
     item["urgency"] = "normal"
@@ -77,50 +84,28 @@ def add_analysis_fields(item):
 
     try:
 
-        # ----------------------------------------------------
         # Analysis is already a dictionary
-        # ----------------------------------------------------
-
         if isinstance(analysis, dict):
             analysis_data = analysis
 
-        # ----------------------------------------------------
         # Analysis is stored as JSON string
-        # ----------------------------------------------------
-
         else:
             analysis_data = json.loads(analysis)
-
-        # ----------------------------------------------------
-        # Sentiment
-        # ----------------------------------------------------
 
         item["sentiment"] = analysis_data.get(
             "sentiment",
             "neutral"
         )
 
-        # ----------------------------------------------------
-        # Emotion
-        # ----------------------------------------------------
-
         item["emotion"] = analysis_data.get(
             "emotion",
             "neutral"
         )
 
-        # ----------------------------------------------------
-        # Urgency
-        # ----------------------------------------------------
-
         item["urgency"] = analysis_data.get(
             "urgency",
             "normal"
         )
-
-        # ----------------------------------------------------
-        # Escalation
-        # ----------------------------------------------------
 
         item["escalated"] = analysis_data.get(
             "escalated",
@@ -136,7 +121,6 @@ def add_analysis_fields(item):
         ValueError
     ):
 
-        # Keep default values if analysis is invalid
         item["sentiment"] = "neutral"
         item["emotion"] = "neutral"
         item["urgency"] = "normal"
@@ -175,10 +159,6 @@ def init_db():
         # ----------------------------------------------------
         # DATABASE MIGRATION
         # ----------------------------------------------------
-        # CREATE TABLE IF NOT EXISTS does not change an
-        # existing table. Therefore we check old schemas
-        # and add missing columns.
-        # ----------------------------------------------------
 
         conversation_columns = {
             row["name"]
@@ -187,7 +167,6 @@ def init_db():
             ).fetchall()
         }
 
-        # user_id
         if "user_id" not in conversation_columns:
 
             con.execute(
@@ -197,7 +176,6 @@ def init_db():
                 """
             )
 
-        # user_email
         if "user_email" not in conversation_columns:
 
             con.execute(
@@ -207,7 +185,6 @@ def init_db():
                 """
             )
 
-        # analysis
         if "analysis" not in conversation_columns:
 
             con.execute(
@@ -217,7 +194,6 @@ def init_db():
                 """
             )
 
-        # sources
         if "sources" not in conversation_columns:
 
             con.execute(
@@ -289,7 +265,6 @@ def init_db():
             ).fetchall()
         }
 
-        # conversation_id
         if "conversation_id" not in escalation_columns:
 
             con.execute(
@@ -299,7 +274,6 @@ def init_db():
                 """
             )
 
-        # user_id
         if "user_id" not in escalation_columns:
 
             con.execute(
@@ -309,7 +283,6 @@ def init_db():
                 """
             )
 
-        # user_email
         if "user_email" not in escalation_columns:
 
             con.execute(
@@ -319,7 +292,6 @@ def init_db():
                 """
             )
 
-        # reason
         if "reason" not in escalation_columns:
 
             con.execute(
@@ -329,7 +301,6 @@ def init_db():
                 """
             )
 
-        # status
         if "status" not in escalation_columns:
 
             con.execute(
@@ -339,7 +310,6 @@ def init_db():
                 """
             )
 
-        # created_at
         if "created_at" not in escalation_columns:
 
             con.execute(
@@ -349,7 +319,6 @@ def init_db():
                 """
             )
 
-        # updated_at
         if "updated_at" not in escalation_columns:
 
             con.execute(
@@ -413,19 +382,10 @@ def save_conversation(
 ):
     """
     Save customer/AI conversation.
-
-    user can be:
-        - dictionary
-        - integer
-        - string
     """
 
     user_id = None
     user_email = None
-
-    # --------------------------------------------------------
-    # Dictionary user
-    # --------------------------------------------------------
 
     if isinstance(user, dict):
 
@@ -437,37 +397,16 @@ def save_conversation(
             or user.get("name")
         )
 
-    # --------------------------------------------------------
-    # Integer user
-    # --------------------------------------------------------
-
     elif isinstance(user, int):
 
         user_id = user
-
-    # --------------------------------------------------------
-    # String user
-    # --------------------------------------------------------
 
     elif user is not None:
 
         user_email = str(user)
 
-    # --------------------------------------------------------
-    # Serialize analysis
-    # --------------------------------------------------------
-
     analysis = serialize(analysis)
-
-    # --------------------------------------------------------
-    # Serialize sources
-    # --------------------------------------------------------
-
     sources = serialize(sources)
-
-    # --------------------------------------------------------
-    # Save conversation
-    # --------------------------------------------------------
 
     with get_connection() as con:
 
@@ -533,7 +472,6 @@ def user_conversations(
 
         item = dict(row)
 
-        # Extract analysis fields
         item = add_analysis_fields(item)
 
         results.append(item)
@@ -572,7 +510,6 @@ def all_conversations(
 
         item = dict(row)
 
-        # Extract analysis fields
         item = add_analysis_fields(item)
 
         results.append(item)
@@ -588,20 +525,12 @@ def dashboard():
 
     with get_connection() as con:
 
-        # ----------------------------------------------------
-        # Total conversations
-        # ----------------------------------------------------
-
         total_conversations = con.execute(
             """
             SELECT COUNT(*)
             FROM conversations
             """
         ).fetchone()[0]
-
-        # ----------------------------------------------------
-        # Total users
-        # ----------------------------------------------------
 
         total_users = con.execute(
             """
@@ -613,20 +542,12 @@ def dashboard():
             """
         ).fetchone()[0]
 
-        # ----------------------------------------------------
-        # Total knowledge documents
-        # ----------------------------------------------------
-
         total_knowledge = con.execute(
             """
             SELECT COUNT(*)
             FROM knowledge
             """
         ).fetchone()[0]
-
-        # ----------------------------------------------------
-        # Total chunks
-        # ----------------------------------------------------
 
         total_chunks = con.execute(
             """
@@ -637,10 +558,6 @@ def dashboard():
             FROM knowledge
             """
         ).fetchone()[0]
-
-        # ----------------------------------------------------
-        # Open escalations
-        # ----------------------------------------------------
 
         open_escalations = con.execute(
             """
@@ -653,20 +570,12 @@ def dashboard():
             """
         ).fetchone()[0]
 
-        # ----------------------------------------------------
-        # Total escalations
-        # ----------------------------------------------------
-
         total_escalations = con.execute(
             """
             SELECT COUNT(*)
             FROM escalations
             """
         ).fetchone()[0]
-
-        # ----------------------------------------------------
-        # Total audits
-        # ----------------------------------------------------
 
         total_audits = con.execute(
             """
@@ -770,10 +679,6 @@ def create_escalation(
     user_id = None
     user_email = None
 
-    # --------------------------------------------------------
-    # Dictionary user
-    # --------------------------------------------------------
-
     if isinstance(user, dict):
 
         user_id = user.get("id")
@@ -784,25 +689,13 @@ def create_escalation(
             or user.get("name")
         )
 
-    # --------------------------------------------------------
-    # Integer user
-    # --------------------------------------------------------
-
     elif isinstance(user, int):
 
         user_id = user
 
-    # --------------------------------------------------------
-    # String user
-    # --------------------------------------------------------
-
     elif user is not None:
 
         user_email = str(user)
-
-    # --------------------------------------------------------
-    # Create escalation
-    # --------------------------------------------------------
 
     with get_connection() as con:
 
